@@ -1,0 +1,5 @@
+{
+  "name": "mermaid-preview",
+  "version": "0.1.0",
+  "description": "Adds a button under replies with mermaid diagrams that opens them as an HTML page in the browser"
+}

@@ -1,0 +1,11 @@
+{
+  "name": "my-mods",
+  "owner": { "name": "local" },
+  "plugins": [
+    {
+      "name": "mermaid-preview",
+      "source": "./mermaid-preview",
+      "description": "Adds a button under replies with mermaid diagrams that opens them as an HTML page in the browser"
+    }
+  ]
+}
