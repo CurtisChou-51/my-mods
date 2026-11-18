@@ -15,10 +15,17 @@ Button and Inserts: the bar's button reads the first (`指的是`) and a press
 inserts the second (`指的是什麼？`). Edit either, then press Enter or a field's
 `✓`, and both are saved together; an empty Button falls back to the phrase, an
 empty Inserts is refused. After the fields, `↑` moves a row up (the top ten are
-the ones the bar can show) and `✕` deletes it. The list is kept across sessions.
-
+the ones the bar can show) and `✕` deletes it. 
 `Hide` folds the bar down to one `Quick ▸` control, which brings it back.
 
 Phrases are drawn as the app's primary button, so they stand apart from the
 page; `Manage`, `Hide` and `Quick ▸` keep the default one. A mod picks a button's
 variant, not its paint: the colour and the corners are the theme's.
+
+Every session reads and writes one file, `~/.claude/quick-input/phrases.json`
+(under `CLAUDE_CONFIG_DIR` when that is set), whichever way the mod was
+installed. A save is applied to the file as it stands, so a phrase another
+session added in the meantime is kept, and each session looks for changes every
+three seconds, so what one adds shows up in the others. The file is plain JSON,
+`{ "phrases": [{ "id", "text", "short"? }] }`, and can be edited by hand. On its
+first run the mod carries over what versions before 0.2 kept in their own store.

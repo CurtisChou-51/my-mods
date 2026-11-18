@@ -1,10 +1,13 @@
 import { atom, read, update } from 'claude-code'
-import type { Register } from 'claude-code'
+import type { EngineInterface, Register } from 'claude-code'
 
 import type { Edit, Phrase } from '../types'
 
 const PANE = 'quick-input'
+/** Where versions before 0.2 kept the phrases: `$.store`, one per install. */
 const STORE_KEY = 'phrases'
+/** How often a session looks for changes another session wrote. */
+const POLL_MS = 3000
 const BAND_COUNT = 10
 const LABEL_CHARS = 14
 const SHORT_CELLS = 20
@@ -88,11 +91,104 @@ const isPhrase = (one: unknown): one is Phrase =>
   ((one as Phrase).short === undefined ||
     typeof (one as Phrase).short === 'string')
 
+/** The phrases a file holds, or undefined when it is not ours to read. */
+const parse = (text: string): Phrase[] | undefined => {
+  try {
+    const data: unknown = JSON.parse(text)
+    const list =
+      typeof data === 'object' && data !== null
+        ? (data as { phrases?: unknown }).phrases
+        : undefined
+
+    return Array.isArray(list) ? list.filter(isPhrase) : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * The one file every session and every install shares, under the Claude Code
+ * configuration directory: `$.store` names its file after how the mod was
+ * installed, so a reinstall would start empty.
+ */
+const sharedFile = async ($: EngineInterface) => {
+  const config = await $.env.get('CLAUDE_CONFIG_DIR')
+  const home =
+    (await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? ''
+  const base = (config ?? `${home}/.claude`).replace(/[\\/]+$/, '')
+
+  return `${base}/quick-input/phrases.json`
+}
+
+/** The shared file, known once the session has started. */
+let file = ''
+/** Its modified time as this session last read or wrote it. */
+let seen = -1
+
+/** Reads the shared file; undefined when it is missing or unreadable. */
+const load = async ($: EngineInterface) => {
+  if (file === '' || !(await $.fs.exists(file))) {
+    return undefined
+  }
+  seen = (await $.fs.stat(file)).mtimeMs
+
+  return parse(await $.fs.read(file))
+}
+
+/** Writes the list to the shared file and to this session's state. */
+const store = async ($: EngineInterface, list: Phrase[]) => {
+  await $.fs.write(file, `${JSON.stringify({ phrases: list }, null, 2)}\n`)
+  seen = (await $.fs.stat(file)).mtimeMs
+  await update($, phrases, () => list)
+}
+
+/**
+ * Applies a change to the file as it stands now, not to this session's copy
+ * of it, so what another session saved in the meantime is kept.
+ */
+const change = async ($: EngineInterface, op: (old: Phrase[]) => Phrase[]) => {
+  const fresh = (await load($)) ?? (await read($, phrases))
+  await store($, op(fresh))
+}
+
+/** Takes in what another session wrote, when the file has moved on. */
+const refresh = async ($: EngineInterface) => {
+  try {
+    if (file === '' || !(await $.fs.exists(file))) {
+      return
+    }
+    if ((await $.fs.stat(file)).mtimeMs === seen) {
+      return
+    }
+    const list = await load($)
+    const now = await read($, phrases)
+    if (list !== undefined && JSON.stringify(list) !== JSON.stringify(now)) {
+      await update($, phrases, () => list)
+    }
+  } catch {
+    // A file caught mid-write reads again on the next tick.
+  }
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    const kept = await $.store.get(STORE_KEY)
-    if (Array.isArray(kept)) {
-      await update($, phrases, () => kept.filter(isPhrase))
+    file = await sharedFile($)
+    let list = await load($)
+
+    if (list === undefined) {
+      // First run: carry over what an earlier version kept in its own store.
+      const kept = await $.store.get(STORE_KEY)
+      list = Array.isArray(kept) ? kept.filter(isPhrase) : []
+      if (list.length > 0) {
+        await store($, list)
+      }
+    }
+    await update($, phrases, () => list)
+    try {
+      $.clock.every(POLL_MS, () => void refresh($))
+    } catch {
+      // No timer here: the bar still works, it just takes in another
+      // session's changes at the next save or session start instead.
     }
 
     return next(e)
@@ -169,12 +265,7 @@ export const register: Register = on => {
     const list = await read($, phrases)
     const typed = await read($, draft)
 
-    /** Writes a new list to the session's state and the store behind it. */
-    const save = async (next: (old: Phrase[]) => Phrase[]) => {
-      const written = next(await read($, phrases))
-      await update($, phrases, () => written)
-      await $.store.set(STORE_KEY, written)
-    }
+    const save = (op: (old: Phrase[]) => Phrase[]) => change($, op)
 
     const add = async (text: string) => {
       const clean = text.trim()
@@ -235,11 +326,13 @@ export const register: Register = on => {
       await commit(one)
     }
 
-    const swapUp = (i: number) =>
+    /** Moves a phrase up one, found by id: another session may have moved it. */
+    const moveUp = (id: string) =>
       save(old => {
+        const i = old.findIndex(x => x.id === id)
         const one = old[i]
         const above = old[i - 1]
-        if (i === 0 || one === undefined || above === undefined) {
+        if (i <= 0 || one === undefined || above === undefined) {
           return old
         }
 
@@ -305,7 +398,7 @@ export const register: Register = on => {
                     label="↑"
                     plain
                     dimColor
-                    onPress={() => swapUp(i)}
+                    onPress={() => moveUp(one.id)}
                   />
                   <Button
                     key={`del-${one.id}`}
