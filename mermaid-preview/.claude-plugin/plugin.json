@@ -1,6 +1,6 @@
 {
   "name": "mermaid-preview",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "回覆中有 mermaid 圖時，下方會出現按鈕，可在瀏覽器以 HTML 開啟並縮放圖表",
-  "author": { "name": "CurtisChou-51" }
+  "author": { "name": "Curtis" }
 }
