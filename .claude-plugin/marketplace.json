@@ -1,11 +1,11 @@
 {
   "name": "my-mods",
-  "owner": { "name": "local" },
+  "owner": { "name": "CurtisChou-51" },
   "plugins": [
     {
       "name": "mermaid-preview",
       "source": "./mermaid-preview",
-      "description": "Adds a button under replies with mermaid diagrams that opens them as an HTML page in the browser"
+      "description": "回覆中有 mermaid 圖時，下方會出現按鈕，可在瀏覽器以 HTML 開啟並縮放圖表"
     }
   ]
 }
