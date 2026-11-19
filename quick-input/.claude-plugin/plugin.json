@@ -1,6 +1,6 @@
 {
   "name": "quick-input",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "把常用語句存成輸入框上方的按鈕，點一下就帶入輸入框；面板可管理語句與按鈕顯示的簡稱",
   "author": {
     "name": "Curtis"

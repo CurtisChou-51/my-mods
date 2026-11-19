@@ -124,6 +124,18 @@ const sharedFile = async ($: EngineInterface) => {
 let file = ''
 /** Its modified time as this session last read or wrote it. */
 let seen = -1
+/**
+ * The list as this module last put it in `phrases`, as JSON. A `/clear` starts
+ * a new session whose `phrases` is back to `[]` while this module goes on, and
+ * no `session.start` fires for it; `refresh` tells that apart by this.
+ */
+let known = '[]'
+
+/** Puts the list in this session's state and remembers what it put there. */
+const show = async ($: EngineInterface, list: Phrase[]) => {
+  known = JSON.stringify(list)
+  await update($, phrases, () => list)
+}
 
 /** Reads the shared file; undefined when it is missing or unreadable. */
 const load = async ($: EngineInterface) => {
@@ -139,7 +151,7 @@ const load = async ($: EngineInterface) => {
 const store = async ($: EngineInterface, list: Phrase[]) => {
   await $.fs.write(file, `${JSON.stringify({ phrases: list }, null, 2)}\n`)
   seen = (await $.fs.stat(file)).mtimeMs
-  await update($, phrases, () => list)
+  await show($, list)
 }
 
 /**
@@ -151,19 +163,28 @@ const change = async ($: EngineInterface, op: (old: Phrase[]) => Phrase[]) => {
   await store($, op(fresh))
 }
 
-/** Takes in what another session wrote, when the file has moved on. */
+/**
+ * Takes in what another session wrote, when the file has moved on, and puts
+ * the list back when this session's state lost it (a `/clear`).
+ */
 const refresh = async ($: EngineInterface) => {
   try {
     if (file === '' || !(await $.fs.exists(file))) {
       return
     }
-    if ((await $.fs.stat(file)).mtimeMs === seen) {
+    const now = await read($, phrases)
+    const isReset = JSON.stringify(now) !== known
+    if (!isReset && (await $.fs.stat(file)).mtimeMs === seen) {
       return
     }
     const list = await load($)
-    const now = await read($, phrases)
-    if (list !== undefined && JSON.stringify(list) !== JSON.stringify(now)) {
-      await update($, phrases, () => list)
+    if (list === undefined) {
+      return
+    }
+    if (JSON.stringify(list) !== JSON.stringify(now)) {
+      await show($, list)
+    } else {
+      known = JSON.stringify(list)
     }
   } catch {
     // A file caught mid-write reads again on the next tick.
@@ -183,7 +204,7 @@ export const register: Register = on => {
         await store($, list)
       }
     }
-    await update($, phrases, () => list)
+    await show($, list)
     try {
       $.clock.every(POLL_MS, () => void refresh($))
     } catch {
